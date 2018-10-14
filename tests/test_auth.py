@@ -7,7 +7,10 @@ from tests.conftest import *
 
 
 def simulate_request(client, url, method='POST', **kwargs):
-    headers = {'Content-Type': 'application/json'}
+    if method == 'POST':
+        headers = {'Content-Type': 'application/json'}
+    else:
+        headers = {}
     auth_token = kwargs.pop('auth_token', None)
     if auth_token:
         headers['Authorization'] = auth_token
@@ -142,6 +145,41 @@ class TestWithJWTAuth(JWTAuthFixture, ResourceFixture):
             JWTAuthBackend(lambda u: u, SECRET_KEY, verify_claims=['iss'])
 
         assert 'Issuer parameter must be provided' in str(ex.value)
+
+
+class TestWithHawkAuth(HawkAuthFixture, ResourceFixture):
+
+    def test_valid_auth_success(self, client, auth_token, user):
+        resp = simulate_request(client, '/auth', method='GET', auth_token=auth_token)
+        assert resp.status_code == 200
+        assert resp.text == 'Success'
+
+    def test_invalid_prefix_fail(self, client, user, auth_token):
+        auth_token = auth_token.replace('Hawk', 'Invalid')
+        resp = simulate_request(client, '/auth', method='GET', auth_token=auth_token)
+        assert resp.status_code == 401
+        assert 'Must start with Hawk' in resp.text
+
+    def test_unrecognized_user_fails(self, client, user):
+        cloned_user = user.clone()
+        cloned_user.username = 'jane'
+        auth_token = get_hawk_token(cloned_user)
+        resp = simulate_request(client, '/auth', method='GET', auth_token=auth_token)
+        assert resp.status_code == 401
+        assert (resp.json['description']
+                == 'CredentialsLookupError(Could not find credentials for ID jane)')
+
+    def test_invalid_password_fails(self, client, user):
+        cloned_user = user.clone()
+        cloned_user.password = 'incorrect password'
+        auth_token = get_hawk_token(cloned_user)
+        resp = simulate_request(client, '/auth', method='GET', auth_token=auth_token)
+        assert resp.status_code == 401
+        assert 'MacMismatch(MACs do not match' in resp.json['description']
+
+    def test_init_receiver_credentials_map_none_fails(self):
+        with pytest.raises(ValueError) as ex:
+            HawkAuthBackend(lambda u: u, receiver_kwargs={})
 
 
 class TestWithNoneAuth(NoneAuthFixture, ResourceFixture):

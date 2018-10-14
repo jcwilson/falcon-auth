@@ -15,6 +15,12 @@ Install the extension with pip, or easy\_install.
 
     $ pip install -U falcon-auth
 
+If you wish to use the optional backends, specify those dependencies, too.
+
+.. code:: bash
+
+    $ pip install -U falcon-auth[backend-hawk,backend-jwt]
+
 Usage
 -----
 
@@ -126,6 +132,22 @@ header contains a prefix (typically Token) followed by an `API Token`
 + **JWT Authentication**
 
 Token based authentication using the `JSON Web Token standard <https://jwt.io/introduction/>`__
+If you wish to use this backend, be sure to add the optional dependency to your requirements:
+
+.. code:: text
+
+    falcon-auth[backend-jwt]
+
+
++ **Hawk Authentication**
+
+Token based authentication using the `Hawk "Holder-Of-Key Authentication Scheme" <https://github.com/hueniverse/hawk>`__
+If you wish to use this backend, be sure to add the optional dependency to your requirements:
+
+.. code:: text
+
+    falcon-auth[backend-hawk]
+
 
 + **Dummy Authentication**
 
@@ -134,7 +156,7 @@ Backend which does not perform any authentication checks
 + **Multi Backend Authentication**
 
 A Backend which comprises of multiple backends and requires any of them to authenticate
-the request successfully
+the request successfully.
 
 Tests
 -----

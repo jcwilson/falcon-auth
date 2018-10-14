@@ -11,11 +11,12 @@ from datetime import datetime, timedelta
 
 import falcon
 import jwt
+import mohawk
 import pytest
 from falcon import testing
 
 from falcon_auth.backends import AuthBackend, BasicAuthBackend, \
-    JWTAuthBackend, NoneAuthBackend, MultiAuthBackend
+    JWTAuthBackend, NoneAuthBackend, MultiAuthBackend, HawkAuthBackend
 from falcon_auth.middleware import FalconAuthMiddleware
 from falcon_auth.backends import TokenAuthBackend
 
@@ -174,6 +175,54 @@ class JWTAuthFixture:
     def auth_token(self, user):
 
         return get_jwt_token(user)
+
+
+@pytest.fixture(scope='function')
+def hawk_backend(user):
+    def user_loader(id, mac, ts, nonce):
+        return user if user.username == id else None
+
+    def credentials_map(username):
+        # Our backend will only know about the one user
+        creds = {
+            user.username: {
+                'id': user.username,
+                'key': user.password,
+                'algorithm': 'sha256',
+            }
+        }
+
+        return creds[username]
+
+    return HawkAuthBackend(
+        user_loader,
+        receiver_kwargs=dict(credentials_map=credentials_map))
+
+
+def get_hawk_token(user):
+    sender = mohawk.Sender(
+        credentials={
+            'id': user.username,
+            'key': user.password,
+            'algorithm': 'sha256',
+        },
+        url='http://falconframework.org/auth',
+        method='GET',
+        nonce='ABC123',
+        always_hash_content=False
+    )
+    return str(sender.request_header)
+
+
+class HawkAuthFixture:
+
+    @pytest.fixture(scope='function')
+    def backend(self, hawk_backend):
+        return hawk_backend
+
+    @pytest.fixture(scope='function')
+    def auth_token(self, user):
+        return get_hawk_token(user)
 
 
 @pytest.fixture(scope='function')

@@ -40,9 +40,12 @@ setup(
     download_url='',
     setup_requires=['pytest-runner'],
     install_requires=[
-        'falcon',
-        'pyjwt'
+        'falcon'
     ],
+    extras_require={
+        'backend-hawk': ['mohawk==1.0.0'],
+        'backend-jwt': ['pyjwt']
+    },
     license='MIT',
     name='falcon-auth',
     packages=[
@@ -57,7 +60,9 @@ setup(
         'codecov>=2.0.3,<3.0.0',
         'coverage>=4.0.3,<5.0.0',
         'tox>=2.3.1,<3.0.0',
-        'python-coveralls==2.9.0'
+        'python-coveralls==2.9.0',
+        'pyjwt',
+        'mohawk==1.0.0',
     ],
     url='https://github.com/loanzen/falcon-auth',
     version=version
