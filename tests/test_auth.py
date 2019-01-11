@@ -313,13 +313,11 @@ def test_auth_middleware_none_backend():
 
 
 def test_optional_jwt_not_present(monkeypatch):
-    with monkeypatch.context() as m:
-        m.delattr('falcon_auth.backends.jwt')
-        with pytest.raises(ImportError):
-            JWTAuthBackend(lambda _: None, SECRET_KEY)
+    monkeypatch.delattr('falcon_auth.backends.jwt')
+    with pytest.raises(ImportError):
+        JWTAuthBackend(lambda _: None, SECRET_KEY)
 
 def test_optional_hawk_not_present(monkeypatch):
-    with monkeypatch.context() as m:
-        m. delattr('falcon_auth.backends.mohawk')
-        with pytest.raises(ImportError):
-            HawkAuthBackend(lambda _: None, {})
+    monkeypatch.delattr('falcon_auth.backends.mohawk')
+    with pytest.raises(ImportError):
+        HawkAuthBackend(lambda _: None, {})
