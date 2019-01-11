@@ -19,6 +19,7 @@ from falcon_auth.backends import AuthBackend, BasicAuthBackend, \
     JWTAuthBackend, NoneAuthBackend, MultiAuthBackend, HawkAuthBackend
 from falcon_auth.middleware import FalconAuthMiddleware
 from falcon_auth.backends import TokenAuthBackend
+from falcon_auth.serializer import ExtendedJSONEncoder
 
 
 EXPIRATION_DELTA = 30 * 60
@@ -161,7 +162,8 @@ def get_jwt_token(user, prefix='JWT'):
         'exp': now + timedelta(seconds=EXPIRATION_DELTA)
     }
 
-    jwt_token = jwt.encode(payload, SECRET_KEY).decode('utf-8')
+    jwt_token = jwt.encode(payload, SECRET_KEY,
+                           json_encoder=ExtendedJSONEncoder).decode('utf-8')
     return '{prefix} {jwt_token}'.format(prefix=prefix, jwt_token=jwt_token)
 
 
@@ -179,8 +181,8 @@ class JWTAuthFixture:
 
 @pytest.fixture(scope='function')
 def hawk_backend(user):
-    def user_loader(id, mac, ts, nonce):
-        return user if user.username == id else None
+    def user_loader(username):
+        return user if user.username == username else None
 
     def credentials_map(username):
         # Our backend will only know about the one user

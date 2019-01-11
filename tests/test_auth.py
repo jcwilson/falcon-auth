@@ -107,6 +107,11 @@ class TestWithTokenAuth(TokenAuthFixture, ResourceFixture):
 
 class TestWithJWTAuth(JWTAuthFixture, ResourceFixture):
 
+    def test_get_auth_header(self, jwt_backend, user):
+        auth_header = jwt_backend.get_auth_header(user.to_dict())
+        prefix, data = auth_header.split()
+        assert prefix == 'jwt'
+
     def test_valid_auth_success(self, client, auth_token, user):
         resp = simulate_request(client, '/auth', auth_token=auth_token)
         assert resp.status_code == 200
@@ -145,6 +150,15 @@ class TestWithJWTAuth(JWTAuthFixture, ResourceFixture):
             JWTAuthBackend(lambda u: u, SECRET_KEY, verify_claims=['iss'])
 
         assert 'Issuer parameter must be provided' in str(ex.value)
+
+    def test_backend_get_auth_token(self, user, backend):
+        user_payload = {
+            'id': user.id,
+            'username': user.username
+        }
+        auth_token = backend.get_auth_token(user_payload)
+        decoded_token = jwt.decode(auth_token, SECRET_KEY)
+        assert decoded_token['user'] == user_payload
 
 
 class TestWithHawkAuth(HawkAuthFixture, ResourceFixture):
@@ -296,3 +310,16 @@ def test_auth_middleware_none_backend():
         FalconAuthMiddleware(backend=None)
 
     assert 'Invalid authentication backend' in str(ex.value)
+
+
+def test_optional_jwt_not_present(monkeypatch):
+    with monkeypatch.context() as m:
+        m.delattr('falcon_auth.backends.jwt')
+        with pytest.raises(ImportError):
+            JWTAuthBackend(lambda _: None, SECRET_KEY)
+
+def test_optional_hawk_not_present(monkeypatch):
+    with monkeypatch.context() as m:
+        m. delattr('falcon_auth.backends.mohawk')
+        with pytest.raises(ImportError):
+            HawkAuthBackend(lambda _: None, {})

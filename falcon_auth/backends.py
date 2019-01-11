@@ -54,7 +54,6 @@ class AuthBackend(object):
         Parses and returns Auth token from the request header. Raises
         `falcon.HTTPUnauthoried exception` with proper error message
         """
-
         if not auth_header:
             raise falcon.HTTPUnauthorized(
                 description='Missing Authorization Header')
@@ -251,7 +250,6 @@ class JWTAuthBackend(AuthBackend):
 
 
 class BasicAuthBackend(AuthBackend):
-
     """
     Implements `HTTP Basic Authentication <http://tools.ietf.org/html/rfc2617>`__
     Clients should authenticate by passing the `base64` encoded credentials
@@ -336,7 +334,6 @@ class TokenAuthBackend(BasicAuthBackend):
        Implements Simple Token Based Authentication. Clients should authenticate by passing the token key in the "Authorization"
            HTTP header, prepended with the string "Token ".  For example:
 
-
                Authorization: Token 401f7ac837da42b97f613d789819ff93537bee6a
 
        Args:
@@ -402,8 +399,90 @@ class NoneAuthBackend(AuthBackend):
         return self.user_loader()
 
 
-class MultiAuthBackend(AuthBackend):
+class HawkAuthBackend(AuthBackend):
+    """
+    Holder-Of-Key Authentication Scheme defined by `Hawk <https://github.com/hueniverse/hawk>`__
+    Clients should authenticate by passing a Hawk-formatted header as the `Authorization`
+    HTTP header. For example:
 
+        Authorization: Hawk id="dh37fgj492je", ts="1353832234", nonce="j4h3g2", ext="some-app-ext-data", mac="6R4rV5iE+NPoym+WwjeHzjAGXUtLNIxmo1vpMofpLAE="
+
+    Args:
+        user_loader(function, required): A callback function that is called with the `id`
+            value extracted from the `Hawk` header. Returns an `authenticated user` if the user
+            matching the credentials exists or returns `None` to indicate if no user was found.
+
+        receiver_kwargs(dict, required): A dictionary of arguments to be passed through
+            to the Receiver. One must provide the `credentials_map` function for the
+            purposes of looking up a user's credentials from their user id (the same value
+            passed to `user_loader()`). See the `docs <https://mohawk.readthedocs.io/en/latest/usage.html#receiving-a-request>`__
+            for further details.
+    """
+    def __init__(self, user_loader, receiver_kwargs):
+        try:
+            mohawk
+        except NameError:
+            raise ImportError('Optional dependency falcon-auth[backend-hawk] not installed')
+        self.user_loader = user_loader
+        self.auth_header_prefix = 'Hawk'
+        self.receiver_kwargs = receiver_kwargs
+
+        if not callable(self.receiver_kwargs.get('credentials_map')):
+            raise ValueError('Required "credentials_map" function not provided in receiver_kwargs')
+
+    def parse_auth_token_from_request(self, auth_header):
+        """
+        Parses and returns the Hawk Authorization header if it is present and well-formed.
+        Raises `falcon.HTTPUnauthoried exception` with proper error message
+        """
+        if not auth_header:
+            raise falcon.HTTPUnauthorized(
+                description='Missing Authorization Header')
+
+        try:
+            auth_header_prefix, _ = auth_header.split(' ', 1)
+        except ValueError:
+            raise falcon.HTTPUnauthorized(
+                description='Invalid Authorization Header: Missing Scheme or Parameters')
+
+        if auth_header_prefix.lower() != self.auth_header_prefix.lower():
+            raise falcon.HTTPUnauthorized(
+                description='Invalid Authorization Header: '
+                            'Must start with {0}'.format(self.auth_header_prefix))
+
+        return auth_header
+
+    def authenticate(self, req, resp, resource):
+        request_header = self.parse_auth_token_from_request(req.get_header('Authorization'))
+
+        try:
+            # Validate the Authorization header contents and lookup the user's credentials
+            # via the provided `credentials_map` function.
+            receiver = mohawk.Receiver(
+                request_header=request_header,
+                method=req.method,
+                url=req.forwarded_uri,
+                content=req.context.get('body'),
+                content_type=req.get_header('Content-Type'),
+                **self.receiver_kwargs)
+        except mohawk.exc.HawkFail as ex:
+            raise falcon.HTTPUnauthorized(
+                description='{0}({1!s})'.format(ex.__class__.__name__, ex),
+                challenges=(
+                    [getattr(ex, 'www_authenticate')]
+                    if hasattr(ex, 'www_authenticate')
+                    else []))
+
+        # The authentication was successful, get the actual user object now.
+        user = self.user_loader(receiver.parsed_header['id'])
+        if not user:
+            # Should never really happen unless your user objects and their
+            # credentials are out of sync.
+            raise falcon.HTTPUnauthorized(
+                description='Invalid User')
+
+
+class MultiAuthBackend(AuthBackend):
     """
     A backend which takes two or more ``AuthBackend`` as inputs and successfully
     authenticates if either of them succeeds else raises `falcon.HTTPUnauthoried exception`
@@ -450,55 +529,3 @@ class MultiAuthBackend(AuthBackend):
                 pass
 
         return None
-
-
-class HawkAuthBackend(AuthBackend):
-
-    def __init__(self, user_loader, receiver_kwargs=None):
-        try:
-            mohawk
-        except NameError:
-            raise ImportError('Optional dependency falcon-auth[backend-hawk] not installed')
-
-        self.user_loader = user_loader
-        self.auth_header_prefix = 'Hawk'
-        self.receiver_kwargs = receiver_kwargs or {}
-
-        if not callable(self.receiver_kwargs.get('credentials_map')):
-            raise ValueError('Required "credentials_map" function not provided in receiver_kwargs')
-
-    def authenticate(self, req, resp, resource):
-        request_header = req.get_header('Authorization')
-
-        if not request_header:
-            raise falcon.HTTPUnauthorized(
-                description='Missing Authorization Header')
-
-        try:
-            request_header_prefix, _ = request_header.split(' ', 1)
-        except ValueError:
-            raise falcon.HTTPUnauthorized(
-                description='Invalid Authorization Header: Missing Scheme or Parameters')
-
-        if request_header_prefix.lower() != self.auth_header_prefix.lower():
-            raise falcon.HTTPUnauthorized(
-                description='Invalid Authorization Header: '
-                            'Must start with {0}'.format(self.auth_header_prefix))
-
-        try:
-            receiver = mohawk.Receiver(
-                request_header=request_header,
-                method=req.method,
-                url=req.forwarded_uri,
-                content=req.context.get('body'),
-                content_type=req.get_header('Content-Type'),
-                **self.receiver_kwargs)
-        except mohawk.exc.HawkFail as ex:
-            raise falcon.HTTPUnauthorized(
-                description='{0}({1!s})'.format(ex.__class__.__name__, ex),
-                challenges=(
-                    [getattr(ex, 'www_authenticate')]
-                    if hasattr(ex, 'www_authenticate')
-                    else []))
-
-        return self.user_loader(**receiver.parsed_header)
